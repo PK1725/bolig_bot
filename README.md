@@ -1,4 +1,4 @@
-Adapted from https://github.com/aleenprd/boligportal-scraper
+[Adapted from https://github.com/aleenprd/boligportal-scraper](https://github.com/kakn/boligportal-scraper)
 
 # BoligPortal Scraper
 
