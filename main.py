@@ -29,6 +29,7 @@ class BoligPortalScraper:
         self.max_price = int(self._load_env_var("MAX_PRICE", "999999"))
         self.min_rooms = float(self._load_env_var("MIN_ROOMS", "1"))
         self.min_sqm = int(self._load_env_var("MIN_SQM", "0"))
+        self.min_period = int(self._load_env_var("MIN_PERIOD", "0"))
 
         # Parse the JSON for areas
         self.areas = json.loads(self.areas_json)
@@ -36,6 +37,14 @@ class BoligPortalScraper:
         # Initialize listings store and Selenium driver
         self.listings = self._load_listings()
         self.driver = self._init_webdriver()
+
+        print(f"Webdriver path: {self.webdriver_path}")
+        print(f"Telegram bot token: {self.bot_token}")
+        print(f"Telegram chat ID: {self.chat_id}")
+        print(f"Areas: {self.areas}")
+        print(f"Max price: {self.max_price}")
+        print(f"Min rooms: {self.min_rooms}")
+        print(f"Min sqm: {self.min_sqm}")
 
     def _load_env_var(self, key: str, default=None) -> str:
         val = os.environ.get(key, default)
@@ -93,12 +102,32 @@ class BoligPortalScraper:
     def _parse_price(self, text: str) -> int:
         digits = re.sub(r"\D", "", text)
         return int(digits) if digits.isdigit() else 0
+    
+    def _parse_period(self, text: str) -> str:
+        default_value = 99999
+        if text == "Ubegrænset":
+            return default_value
+        elif text == "24+ måneder":
+            return 24
+        elif text == "12-23 måneder":
+            return 12
+        elif text == "1-11 måneder":
+            return 1
+        elif text == "":
+            return default_value
+        else:
+            #print(f"Unknown period format: {text}, defaulting to {str(default_value)}")
+            return default_value
 
-    def _meets_criteria(self, rooms: float, sqm: int, price: int) -> bool:
+    def _meets_initial_criteria(self, rooms: float, sqm: int, price: int) -> bool:
         return (
             rooms >= self.min_rooms
             and sqm >= self.min_sqm
             and price <= self.max_price
+        )
+    def _meets_in_depth_criteria(self, period: int) -> bool:
+        return (
+            period >= self.min_period
         )
 
     def _scrape_area(self, area_name: str, base_url: str) -> None:
@@ -110,11 +139,12 @@ class BoligPortalScraper:
 
             soup = self._scrape_page(page_url)
             cards = soup.find_all("a", {"class": ["AdCardSrp__Link", "css-17x8ssx"]})
+
             if page_idx == 0 and not cards:
                 break
 
             for card in cards:
-                # print(card.prettify())
+                #print(card.prettify())
 
                 apt_href = card.get("href", "")
                 if not apt_href:
@@ -128,7 +158,8 @@ class BoligPortalScraper:
                 title_el = card.select_one(".css-a76tvl")
                 location_el = card.select_one(".css-avmlqd")
                 price_el = card.select_one(".css-dlcfcd")
-
+               
+            
                 location_txt = location_el.text.strip() if location_el else ""
                 title_txt = title_el.text.strip() if title_el else ""
                 desc_txt = title_txt  # reuse title for description parsing
@@ -137,14 +168,25 @@ class BoligPortalScraper:
                 rooms_val = self._parse_rooms(desc_txt)
                 sqm_val = self._parse_sqm(desc_txt)
                 price_val = self._parse_price(price_txt)
+                
 
                 # print(f"Found: {title_txt} | Rooms: {rooms_val} | Size: {sqm_val} m² | Price: {price_val} | URL: {apt_url}")
 
-                if not self._meets_criteria(rooms_val, sqm_val, price_val):
-                    # print(f"Skipping due to filters: {apt_url}")
+                if not self._meets_initial_criteria(rooms_val, sqm_val, price_val):
+                    #print(f"Skipping due to filters: {apt_url}")
                     continue
 
                 detail_soup = self._scrape_page(apt_url)
+
+                # Extract period from detail page
+                period_el = detail_soup.select_one(".css-x1kcbm:has(.css-1y5f71p:-soup-contains('Lejeperiode')) .css-14bctuo")
+                period_txt = period_el.text.strip() if period_el else ""
+                period_val = self._parse_period(period_txt)
+
+                if not self._meets_in_depth_criteria(period_val):
+                    print(f"Skipping due to period filter: {apt_url} (Period: {period_txt})")
+                    continue
+                
                 time_el = detail_soup.select_one(".css-v49nss")
                 timestamp_str = time_el.text.strip() if time_el else ""
 
@@ -164,7 +206,7 @@ class BoligPortalScraper:
                     f"Rooms: {rooms_val}, Size: {sqm_val} m², Price: {price_txt}\n"
                     f"{apt_url}"
                 )
-                self._send_telegram_notification(msg)
+                self._send_telegram_notification(msg) # TODO Uncomment to enable notifications
 
         # Remove stale listings
         for known_url in list(self.listings.keys()):

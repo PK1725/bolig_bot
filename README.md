@@ -1,3 +1,5 @@
+Adapted from https://github.com/aleenprd/boligportal-scraper
+
 # BoligPortal Scraper
 
 Scrapes apartment listings from BoligPortal.dk, stores them in a JSON file, and sends Telegram alerts for new listings.
