@@ -183,11 +183,22 @@ class BoligPortalScraper:
                 page_url += f"?offset={18 * page_idx}"
 
             soup = self._scrape_page(page_url)
+            
             if soup is None:
                 print(f"Page load failed, skipping page: {page_url}")
                 continue
+            
+            # Remove the "Lignende annoncer" (Similar ads) section before parsing
+            similar_ads_section = soup.find("h2", string=lambda text: text and "Lignende annoncer" in text)
+            if similar_ads_section:
+                # Find the parent container and remove it
+                parent_container = similar_ads_section.find_parent("div", class_="css-in2ycb")
+                if parent_container:
+                    parent_container.decompose()
 
-            cards = soup.find_all("a", {"class": ["AdCardSrp__Link", "css-17x8ssx"]})
+
+            #cards = soup.find_all("a", {"class": ["AdCardSrp__Link", "css-17x8ssx"]})
+            cards = soup.find_all("a", class_=lambda x: x and "AdCardSrp__Link" in x)
             if page_idx == 0 and not cards:
                 # If first page has no cards, likely blocked or structure changed
                 print(f"No cards found on first page for {area_name}.")
@@ -208,7 +219,7 @@ class BoligPortalScraper:
                 found_urls.append(apt_url)
                 if apt_url in self.listings:
                     continue
-
+                    
                 title_el = card.select_one(".css-a76tvl")
                 location_el = card.select_one(".css-avmlqd")
                 price_el = card.select_one(".css-dlcfcd")
@@ -221,6 +232,7 @@ class BoligPortalScraper:
                 rooms_val = self._parse_rooms(desc_txt)
                 sqm_val = self._parse_sqm(desc_txt)
                 price_val = self._parse_price(price_txt)
+
 
                 if not self._meets_initial_criteria(rooms_val, sqm_val, price_val):
                     continue
